@@ -23,7 +23,7 @@ import json
 import os
 import sys
 
-from .download import _request_header
+from modflow_devtools.utilities.download import _request_header
 
 
 class dotdict(dict):
