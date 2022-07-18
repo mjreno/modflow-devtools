@@ -47,6 +47,15 @@ from .utilities.binary_file_writer import (
     write_head,
 )
 from .utilities.disu_util import get_disu_kwargs
+from .utilities.usgsprograms import usgs_program_data
+from .utilities.download import (
+    download_and_unzip,
+    get_repo_assets,
+    getmfexes,
+    getmfnightly,
+    repo_latest_version,
+    zip_all,
+)
 
 # define public interfaces
 __all__ = [
@@ -89,4 +98,10 @@ __all__ = [
     "write_head",
     "write_budget",
     "get_disu_kwargs",
+    "usgs_program_data",
+    "download_and_unzip",
+    "getmfexes",
+    "repo_latest_version",
+    "get_repo_assets",
+    "zip_all",
 ]
