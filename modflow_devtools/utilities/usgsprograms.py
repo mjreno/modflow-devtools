@@ -23,7 +23,7 @@ import json
 import os
 import sys
 
-from download import _request_header
+from .download import _request_header
 
 
 class dotdict(dict):
