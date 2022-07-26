@@ -96,7 +96,8 @@ class MFTestExe:
         shutil.rmtree(self._releasebin, ignore_errors=True)
 
     def _create_dirs(self):
-        pths = [self._releasebin, self._working_dir, os.path.join("..", "bin")]
+        #pths = [self._releasebin, self._working_dir, os.path.join("..", "bin")]
+        pths = [self._releasebin, self._working_dir ]
         for pth in pths:
             print(f"creating... {os.path.abspath(pth)}")
             os.makedirs(pth, exist_ok=True)
@@ -163,10 +164,8 @@ class MFTestExe:
         self._set_compiler_environment_variable()
         is_windows = sys.platform.lower() == "win32"
         with self._set_directory(dir_path):
-            print(os.getcwd())
-            print(os.listdir("."))
             cmd = (
-                "meson setup --debug builddir "
+                "meson setup builddir "
                 + f"--bindir={os.path.abspath(libdir)} "
                 + f"--libdir={os.path.abspath(libdir)} "
                 + "--prefix="

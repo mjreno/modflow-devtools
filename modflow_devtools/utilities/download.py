@@ -444,7 +444,7 @@ def download_and_unzip(
     if delete_zip:
         if verbose:
             print("Deleting the zipfile...")
-        #os.remove(file_name)
+        os.remove(file_name)
 
     if verbose:
         print("Done downloading and extracting...\n")
