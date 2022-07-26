@@ -163,8 +163,10 @@ class MFTestExe:
         self._set_compiler_environment_variable()
         is_windows = sys.platform.lower() == "win32"
         with self._set_directory(dir_path):
+            print(os.getcwd())
+            print(os.listdir("."))
             cmd = (
-                "meson setup builddir "
+                "meson setup --debug builddir "
                 + f"--bindir={os.path.abspath(libdir)} "
                 + f"--libdir={os.path.abspath(libdir)} "
                 + "--prefix="
