@@ -96,8 +96,8 @@ class MFTestExe:
         shutil.rmtree(self._releasebin, ignore_errors=True)
 
     def _create_dirs(self):
-        pths = [self._releasebin, self._working_dir, os.path.join("..", "bin")]
-        #pths = [self._releasebin, self._working_dir ]
+        #pths = [self._releasebin, self._working_dir, os.path.join("..", "bin")]
+        pths = [self._releasebin, self._working_dir ]
         for pth in pths:
             print(f"creating... {os.path.abspath(pth)}")
             os.makedirs(pth, exist_ok=True)
