@@ -19,5 +19,11 @@ profile = "black"
 src_paths = ["modflow_devtools", "autotest", ]
 line_length = 79
 
+[tool.setuptools.packages.find]
+where = ["modflow_devtools/utilities"]
+
+#[tool.poetry]
+#include = ["modflow_devtools/utilities/usgsprograms.txt"]
+
 [tool.setuptools_scm]
 fallback_version = "999"
