@@ -141,9 +141,8 @@ class MFTestTargets:
         target_so = ".so"
         sysinfo = sys.platform.lower()
         if sysinfo.lower() == "win32":
-            #target_ext = ".exe"
-            #target_so = ".dll"
-            pass
+            target_ext = ".exe"
+            target_so = ".dll"
         elif sysinfo.lower() == "darwin":
             target_so = ".dylib"
 
@@ -222,5 +221,7 @@ class MFTestContext:
                 print(f"release->{m}")
         for m in os.listdir(os.path.join(self._releasebin, "rebuilt")):
                 print(f"built->{m}")
+        for m in os.listdir(self._testbin):
+                print(f"test->{m}")
 
         self._targets.set_targets()
