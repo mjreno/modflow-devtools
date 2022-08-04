@@ -156,8 +156,7 @@ class MFTestExe:
 
     def _meson_build(
         self,
-        #dir_path: str = "..",
-        dir_path: str = os.path.join(self._releasebin, "..")
+        dir_path: str = "..",
         libdir: str = "bin",
     ):
         self._set_compiler_environment_variable()
