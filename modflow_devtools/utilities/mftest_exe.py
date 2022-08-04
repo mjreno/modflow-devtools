@@ -178,6 +178,9 @@ class MFTestExe:
             print(f"setup meson\nrunning...\n  {cmd}")
             subprocess.run(cmd, shell=True, check=True)
 
+            for m in os.listdir(os.path.join(dir_path, "bin")):
+                print(f"bin->{m}")
+
             cmd = "meson install -C builddir"
             print(f"build and install with meson\nrunning...\n  {cmd}")
             subprocess.run(cmd, shell=True, check=True)
