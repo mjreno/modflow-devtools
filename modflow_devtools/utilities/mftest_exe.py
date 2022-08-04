@@ -169,7 +169,8 @@ class MFTestExe:
                 + "--prefix="
             )
             if is_windows:
-                cmd += "%CD%"
+                #cmd += "%CD%"
+                cmd += dir_path
             else:
                 cmd += "$(pwd)"
             if pathlib.Path("builddir").is_dir():
