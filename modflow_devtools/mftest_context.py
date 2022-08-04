@@ -143,6 +143,7 @@ class MFTestTargets:
         if sysinfo.lower() == "win32":
             #target_ext = ".exe"
             #target_so = ".dll"
+            pass
         elif sysinfo.lower() == "darwin":
             target_so = ".dylib"
 
