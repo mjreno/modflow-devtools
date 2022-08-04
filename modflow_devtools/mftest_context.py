@@ -171,13 +171,13 @@ class MFTestContext:
         """MFTestContext init"""
 
         self._testbin = os.path.abspath(testbin)
-        #self._releasebin = os.path.abspath(
-        #    os.path.join(os.path.dirname(__file__), "..", "bin")
-        #)
+        self._releasebin = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "bin")
+        )
 
-        #builtbin = os.path.join(self._releasebin, "rebuilt")
-        self._releasebin = os.path.join(self._testbin, "downloaded")
-        builtbin = os.path.join(self._testbin, "rebuilt")
+        builtbin = os.path.join(self._releasebin, "rebuilt")
+        #self._releasebin = os.path.join(self._testbin, "downloaded")
+        #builtbin = os.path.join(self._testbin, "rebuilt")
 
         self._update = update_exe
 
