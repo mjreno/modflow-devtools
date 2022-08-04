@@ -91,13 +91,15 @@ class MFTestTargets:
             if self._exe_targets[t]["type"] == MFTargetType.REGRESSION
         ]
 
-    def _target_pth(self, target, target_t=None):
+    def _target_pth(self, target, target_t=None, is_lib=False):
         print("_target_pth()")
+        path = None
         if target_t == MFTargetType.TEST:
             print(f"test->{target}")
             if not os.path.isfile(os.path.join(self._testbin, target)):
                 print("...not found")
             exe_exists = flopy.which(target, path=self._testbin)
+            path = self._testbin
         else:
             if self._use_path:
                 exe_exists = flopy.which(target)
@@ -107,17 +109,22 @@ class MFTestTargets:
                     if not os.path.isfile(os.path.join(self._builtbin, target)):
                         print("...not found")
                     exe_exists = flopy.which(target, path=self._builtbin)
+                    path = self._builtbin
                 elif target_t == MFTargetType.RELEASE:
                     print(f"release->{target}")
                     if not os.path.isfile(os.path.join(self._releasebin, target)):
                         print("...not found")
                     exe_exists = flopy.which(target, path=self._releasebin)
+                    path = self._releasebin
 
         if exe_exists is None:
-            print(target)
-            raise Exception(
-                f"{target} does not exist or is not executable in test context."
-            )
+            if is_lib and os.path.isfile(os.path.join(path, target)):
+                pass
+            else:
+                print(target)
+                raise Exception(
+                    f"{target} does not exist or is not executable in test context."
+                )
 
         return os.path.abspath(exe_exists)
 
@@ -158,13 +165,15 @@ class MFTestTargets:
 
         self._target_path_d = {}
         for t in list(self._exe_targets):
+            is_lib = False
             if self._exe_targets[t]["exe"] is None:
                 name = f"{t}{target_so}"
+                is_lib = True
             else:
                 name = f"{self._exe_targets[t]['exe']}{target_ext}"
 
             target = self._target_pth(
-                name, target_t=self._exe_targets[t]["type"]
+                name, target_t=self._exe_targets[t]["type"], is_lib=is_lib
             )
             self._target_path_d[t] = target
 
