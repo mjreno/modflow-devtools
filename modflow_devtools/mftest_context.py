@@ -218,4 +218,9 @@ class MFTestContext:
             self._exe.download_releases()
             self._exe.build_mf6_release()
 
+        for m in os.listdir(self._releasebin):
+                print(f"release->{m}")
+        for m in os.listdir(os.path.join(self._releasebin, "rebuilt")):
+                print(f"built->{m}")
+
         self._targets.set_targets()
