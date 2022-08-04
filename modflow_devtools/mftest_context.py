@@ -92,15 +92,25 @@ class MFTestTargets:
         ]
 
     def _target_pth(self, target, target_t=None):
+        print("_target_pth()")
         if target_t == MFTargetType.TEST:
+            print(f"test->{target}")
+            if not os.path.isfile(os.path.join(self._testbin, target)):
+                print("...not found")
             exe_exists = flopy.which(target, path=self._testbin)
         else:
             if self._use_path:
                 exe_exists = flopy.which(target)
             else:
                 if target_t == MFTargetType.REGRESSION:
+                    print(f"resgression->{target}")
+                    if not os.path.isfile(os.path.join(self._builtbin, target)):
+                        print("...not found")
                     exe_exists = flopy.which(target, path=self._builtbin)
                 elif target_t == MFTargetType.RELEASE:
+                    print(f"release->{target}")
+                    if not os.path.isfile(os.path.join(self._releasebin, target)):
+                        print("...not found")
                     exe_exists = flopy.which(target, path=self._releasebin)
 
         if exe_exists is None:
