@@ -191,6 +191,7 @@ class MFTestExe:
         download_and_unzip(
             target_dict["url"],
             pth=self._working_dir,
+            delete_zip=False,
             verbose=True,
         )
 
