@@ -119,7 +119,7 @@ class MFTestTargets:
 
         if exe_exists is None:
             if is_lib and os.path.isfile(os.path.join(path, target)):
-                pass
+                exe_exists = os.path.abspath(os.path.join(path, target))
             else:
                 print(target)
                 raise Exception(
