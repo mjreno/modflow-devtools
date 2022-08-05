@@ -75,20 +75,36 @@ class MFTestTargets:
         """
         get exe name list of release executables
         """
+        def ext():
+            sysinfo = sys.platform.lower()
+            target_ext = ""
+            if sysinfo.lower() == "win32":
+                target_ext = ".exe"
+            return target_ext
+
         return [
-            self._exe_targets[t]["exe"]
+            f"{self._exe_targets[t]['exe']}{ext()}"
             for t in self._exe_targets
             if self._exe_targets[t]["type"] == MFTargetType.RELEASE
+            and self._exe_targets[t]["exe"]
         ]
 
     def regression_exe_names(self):
         """
         get exe name list of regression executables
         """
+        def ext():
+            sysinfo = sys.platform.lower()
+            target_ext = ""
+            if sysinfo.lower() == "win32":
+                target_ext = ".exe"
+            return target_ext
+
         return [
-            self._exe_targets[t]["exe"]
+            f"{self._exe_targets[t]['exe']}{ext()}"
             for t in self._exe_targets
             if self._exe_targets[t]["type"] == MFTargetType.REGRESSION
+            and self._exe_targets[t]["exe"]
         ]
 
     def _target_pth(self, target, target_t=None, is_lib=False):

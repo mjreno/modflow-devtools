@@ -269,7 +269,7 @@ def _request_header(url, max_requests=10, verbose=False):
 def download_and_unzip(
     url,
     pth="./",
-    delete_zip=True,
+    delete_zip=False,
     verify=True,
     timeout=30,
     max_requests=10,
@@ -444,7 +444,7 @@ def download_and_unzip(
     if delete_zip:
         if verbose:
             print("Deleting the zipfile...")
-        #os.remove(file_name)
+        os.remove(file_name)
 
     if verbose:
         print("Done downloading and extracting...\n")
