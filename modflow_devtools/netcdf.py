@@ -20,7 +20,7 @@ def get_dfn(toml_name):
         SPEC_PATH = fetch.fetch_versioned_path()
     path = Path(SPEC_PATH / "toml" / f"{toml_name}.toml")
     if not path.is_file():
-        raise AssertionError(f"Not a valid mf6 component: {toml_name}")
+        raise AssertionError(f"->not a valid mf6 component: {toml_name}")
     with path.open(mode="rb") as toml_file:
         return load(toml_file, format="toml", name=toml_name)
 
@@ -30,18 +30,18 @@ class NetCDFInput(abc.ABC):
     @classmethod
     @abc.abstractmethod
     def from_meta(cls, meta: dict, context: dict | None):
-        """Create new instance, validate against schema."""
+        """create new instance, validate against schema."""
         pass
 
     @abc.abstractmethod
     def to_xarray(self) -> xr.Dataset:
-        """Xarray dataset."""
+        """create xarray dataset."""
         pass
 
     @property
     @abc.abstractmethod
-    def meta(self):
-        """Abstract meta property getter."""
+    def meta(self) -> dict:
+        """get meta dictionary property."""
         pass
 
 
@@ -102,7 +102,7 @@ class NetCDFModel(BaseModel, NetCDFInput):
             or "modflow_model" not in _meta["attrs"]
         ):
             raise AssertionError(
-                "Model missing required modflow_grid or modflow_model attribute(s)."
+                "->model missing required modflow_grid or modflow_model attribute(s)."
             )
         mname = _meta["attrs"]["modflow_model"].split(":")[1].strip()
 
@@ -112,6 +112,7 @@ class NetCDFModel(BaseModel, NetCDFInput):
                 {"mesh": _meta["attrs"]["mesh"]} if "mesh" in _meta["attrs"] else {}
             )
             pkgctx["modelname"] = mname
+            pkgctx["grid"] = _meta["attrs"]["modflow_grid"]
             pkgctx |= context
             _packages.append(NetCDFPackage.from_meta(pkg, context=pkgctx))
         _meta["packages"] = _packages
@@ -138,16 +139,17 @@ class NetCDFModelAttrs(BaseModel):
     @classmethod
     def validate_modflow_grid(cls, v: str, info: ValidationInfo) -> str:
         v = v.lower()
-        mesh = info.data.get("mesh")
         dims = info.context.get("dims")  # type: ignore
-        if mesh is None:
-            assert v == "structured"
+        if v == "structured":
             if len(dims) != 4:
-                raise AssertionError(f"Expected 4 input dimensions: {dims}")
-        else:
+                raise AssertionError(
+                    "->expected 4 input dimensions for "
+                    f"structured discretization: {dims}"
+                )
+        elif v == "vertex":
             if len(dims) != 3:
                 raise AssertionError(
-                    f"Expected 3 input dimensions for layered mesh: {dims}"
+                    f"->expected 3 input dimensions for vertex discretization: {dims}"
                 )
         info.context["grid"] = v  # type: ignore
         return v
@@ -158,7 +160,7 @@ class NetCDFModelAttrs(BaseModel):
         v = v.lower()
         tokens = v.split(":")
         if len(tokens) != 2:
-            raise ValueError(f"Invalid modflow_model attribute: {v}")
+            raise ValueError(f"->invalid modflow_model attribute: {v}")
         modeltype = tokens[0].strip()
         if modeltype[-1].isdigit():
             modeltype = modeltype[:-1]
@@ -219,22 +221,27 @@ class NetCDFPackage(BaseModel, NetCDFInput):
 
         if "package_name" not in _meta or "package_type" not in _meta:
             raise AssertionError(
-                "Package missing required package_name or package_type attribute(s)."
+                "->package missing required package_name or package_type attribute(s)."
             )
 
         paramctx = dict(context)
         paramctx["package_name"] = _meta["package_name"]
         paramctx["package_type"] = _meta["package_type"]
 
+        dfn = get_dfn(paramctx["package_type"].lower())
+
         dims = context.get("dims", None)
         mesh = context.get("mesh", None)
-
         assert dims is not None
 
         # TODO auxiliary in context
         _params = []
         for p in _meta["params"]:
-            if mesh is None:
+            shape = [
+                dim.strip() for dim in dfn.fields[p["name"].lower()].shape[1:-1].split()
+            ]
+            gridded = "nodes" in shape or len(shape) >= 3
+            if not gridded or mesh is None:
                 if "attrs" in p and "layer" in p["attrs"]:
                     assert p["attrs"]["layer"] is None
                 _params.append(NetCDFParam.from_meta(p, context=paramctx))
@@ -276,13 +283,19 @@ class NetCDFParam(BaseModel, NetCDFInput):
             raise
 
     def to_xarray(self) -> xr.Dataset:
+        grid = self._context.get("grid")  # type: ignore
+
         dimmap = {
-            "time": 0,
-            "z": 1,
-            "y": 2,
-            "nmesh_face": 2,
-            "x": 3,
+            "time": self._context["dims"][0],
+            "z": self._context["dims"][1],
         }
+
+        if grid == "structured":
+            dimmap["y"] = self._context["dims"][2]
+            dimmap["nmesh_face"] = self._context["dims"][2] * self._context["dims"][3]
+            dimmap["x"] = self._context["dims"][3]
+        elif grid == "vertex":
+            dimmap["nmesh_face"] = self._context["dims"][2]
 
         dtype: type[np.generic]
         meta = self.model_dump(by_alias=True)
@@ -295,18 +308,19 @@ class NetCDFParam(BaseModel, NetCDFInput):
         dfn = get_dfn(package_type)
         param = (
             meta["name"]
-            if mesh is None
+            if (
+                mesh is None
+                or "layer" not in meta["attrs"]
+                or meta["attrs"]["layer"] is None
+            )
             else f"{meta['name']}_l{meta['attrs']['layer']}"
         )
-        if dfn.multi:
-            varname = f"{pname}_{param}"
-        else:
-            varname = f"{ptype}_{param}"
+        varname = f"{pname}_{param}" if dfn.multi else f"{ptype}_{param}"
         if meta["dtype"] == "float64":
             dtype = np.float64
         elif meta["dtype"] == "int64":
             dtype = np.int64
-        dims = [self._context["dims"][dimmap[dim]] for dim in meta["shape"]]
+        dims = [dimmap[dim] for dim in meta["shape"]]
         data = np.full(
             dims,
             meta["encodings"]["_FillValue"],
@@ -341,17 +355,17 @@ class NetCDFParam(BaseModel, NetCDFInput):
         blocks = ["griddata", "period"]
         if not any(blk in dfn.blocks for blk in blocks):
             raise ValueError(
-                f"griddata/period blocks not found in package type {package}"
+                f"->griddata/period blocks not found in package type {package}"
             )
         if not any(
             v in dfn.blocks[blk] if blk in dfn.blocks else False for blk in blocks
         ):
-            raise ValueError(f"Param {v} not found in package {package}")
+            raise ValueError(f"->param {v} not found in package {package}")
 
         for b in blocks:
             if b in dfn.blocks and v in dfn.blocks[b]:
                 if not dfn.blocks[b][v].netcdf:
-                    raise ValueError(f"Not a netcdf param: '{v}'")
+                    raise ValueError(f"->not a netcdf param: '{v}'")
         return v
 
     @field_validator("shape", mode="before")
@@ -363,7 +377,7 @@ class NetCDFParam(BaseModel, NetCDFInput):
         v = [dim.lower() if isinstance(dim, str) else dim for dim in v]
         valid = ["time", "nmesh_face", "z", "y", "x"]
         if not all(dim in valid for dim in v):
-            raise AssertionError(f"Invalid param shape={v}. Valid dims={valid}.")
+            raise AssertionError(f"->invalid param shape={v}. Valid dims={valid}.")
         return v
 
     @field_validator("attrs", mode="before")
@@ -376,15 +390,17 @@ class NetCDFParam(BaseModel, NetCDFInput):
         """
         v = {k.lower(): v.lower() if isinstance(v, str) else v for k, v in v.items()}
         param = info.data.get("name")
-        # shape = info.data.get("shape")
+        shape = info.data.get("shape")
+        assert shape
+        gridded = "nodes" in shape or len(shape) >= 3  # type: ignore
         mesh = info.context.get("mesh")  # type: ignore
-        if mesh is not None and ("layer" not in v or v["layer"] is None):
-            raise AssertionError(f"Expected layer attribute for mesh param '{param}'")
+        if gridded and mesh is not None and ("layer" not in v or v["layer"] is None):
+            raise AssertionError(f"->expected layer attribute for mesh param '{param}'")
         if param is not None and param == "aux" and "modflow_iaux" not in v:
             # TODO
             pass
             # raise AssertionError(
-            #    f"Expected modflow_iaux attribute for aux param '{param}'"
+            #    f"->expected modflow_iaux attribute for aux param '{param}'"
             # )
         return v
 
@@ -397,12 +413,13 @@ class NetCDFParam(BaseModel, NetCDFInput):
         v = v.lower()
         valid = ["float64", "int64", "int32"]
         if v not in valid:
-            raise AssertionError(f"Invalid param dtype={v}. Valid types={valid}.")
+            raise AssertionError(f"->invalid param dtype={v}. Valid types={valid}.")
         return v
 
     @staticmethod
     def _backfill_meta(meta: dict, context: dict, verbose: bool = True) -> dict:
         _meta = dict(meta)
+        param = _meta["name"]
 
         def _structured_shape(dfn_shape):
             shape = ["time"] if "nper" in dfn_shape else []
@@ -436,10 +453,9 @@ class NetCDFParam(BaseModel, NetCDFInput):
         mname = context["modelname"]
         mesh = context.get("mesh", None)
         dfn = get_dfn(context["package_type"])
-        param = _meta["name"]
         if param not in dfn.fields:
             raise ValueError(
-                f"Param {param} not found in package {context['package_type']}"
+                f"->param {param} not found in package {context['package_type']}"
             )
         if "attrs" not in _meta:
             _meta["attrs"] = {}
@@ -449,31 +465,31 @@ class NetCDFParam(BaseModel, NetCDFInput):
             if dfn.fields[param].type == "double":
                 _meta["dtype"] = "float64"
                 if "_FillValue" not in _meta["encodings"]:
-                    if dfn.fields[param].block == "period":
-                        _meta["encodings"]["_FillValue"] = FILL_DNODATA
-                    else:
-                        _meta["encodings"]["_FillValue"] = FILL_FLOAT64
+                    _meta["encodings"]["_FillValue"] = (
+                        FILL_DNODATA
+                        if dfn.fields[param].block == "period"
+                        else FILL_FLOAT64
+                    )
             elif dfn.fields[param].type == "integer":
                 _meta["dtype"] = "int64"
                 if "_FillValue" not in _meta["encodings"]:
-                    if dfn.fields[param].block == "period":
-                        _meta["encodings"]["_FillValue"] = FILL_DNODATA
-                    else:
-                        _meta["encodings"]["_FillValue"] = FILL_INT64
+                    _meta["encodings"]["_FillValue"] = (
+                        FILL_DNODATA  # TODO: FILL_INODATA
+                        if dfn.fields[param].block == "period"
+                        else FILL_INT64
+                    )
         if "modflow_input" not in _meta["attrs"]:
-            if dfn.multi:
-                _meta["attrs"]["modflow_input"] = (
-                    f"{mname}/{context['package_name']}/{param}"
-                )
-            else:
-                _meta["attrs"]["modflow_input"] = (
-                    f"{mname}/{context['package_type']}/{param}"
-                )
+            _meta["attrs"]["modflow_input"] = (
+                f"{mname}/{context['package_name']}/{param}"
+                if dfn.multi
+                else f"{mname}/{context['package_type']}/{param}"
+            )
         if "shape" not in _meta:
-            if mesh is not None:
-                _meta["shape"] = _mesh_shape(dfn.fields[param].shape)
-            else:
-                _meta["shape"] = _structured_shape(dfn.fields[param].shape)
+            _meta["shape"] = (
+                _mesh_shape(dfn.fields[param].shape)
+                if mesh is not None
+                else _structured_shape(dfn.fields[param].shape)
+            )
 
         return _meta
 
@@ -490,7 +506,7 @@ class NetCDFParamAttrs(BaseModel):
         modelname = info.context.get("modelname")  # type: ignore
         if v.split("/")[0] != modelname:
             raise ValueError(
-                f'modflow_input attribute "{v}" does not '
+                f'->modflow_input attribute "{v}" does not '
                 f'match dataset modelname "{modelname}")'
             )
         return v
@@ -505,7 +521,7 @@ class NetCDFParamAttrs(BaseModel):
     def validate_layer(cls, v: int, info: ValidationInfo) -> int:
         dims = info.context.get("dims")  # type: ignore
         if v is not None and v > dims[1]:
-            raise ValueError(f"Param layer attribute value {v} exceeds grid k")
+            raise ValueError(f"->param layer attribute value {v} exceeds grid k")
         return v
 
 

@@ -94,7 +94,7 @@ def test_om_package():
         },
     ]
 
-    context = {"modelname": "gwfmodel", "dims": [1, 1, 1, 1]}
+    context = {"modelname": "gwfmodel", "grid": "structured", "dims": [1, 1, 1, 1]}
     for p in packages:
         pinst = NetCDFPackage.from_meta(p, context=context)
         ds = pinst.to_xarray()
@@ -115,6 +115,7 @@ def test_om_param():
     ]
     context = {
         "modelname": "gwfmodel",
+        "grid": "structured",
         "package_name": "welg0",
         "package_type": "gwf-welg",
         "dims": [1, 1, 1, 1],
@@ -130,6 +131,21 @@ def test_om_param():
 
 def test_om_model_mesh():
     packages = [
+        {
+            "package_name": "dis",
+            "package_type": "gwf-dis",
+            "params": [
+                {
+                    "name": "delr",
+                },
+                {
+                    "name": "delc",
+                },
+                {
+                    "name": "idomain",
+                },
+            ],
+        },
         {
             "package_name": "npf",
             "package_type": "gwf-npf",
@@ -178,7 +194,7 @@ def test_om_model_mesh():
     }
 
     # classmethod to generate and validate model
-    inst = NetCDFModel.from_meta(nc_meta, context={"dims": [2, 3, 2]})
+    inst = NetCDFModel.from_meta(nc_meta, context={"dims": [2, 3, 2, 2]})
 
     # meta dict from model instance
     # meta1 = inst.meta
@@ -200,25 +216,36 @@ def test_om_model_mesh():
     assert ds.attrs["modflow_grid"] == "structured"
     assert ds.attrs["modflow_model"] == "gwf6: gwfmodel"
     assert ds.attrs["mesh"] == "layered"
+    assert "dis_delr" in ds
+    assert "dis_delc" in ds
+    assert np.allclose(ds["dis_delr"].values, FILL_FLOAT64)
+    assert np.allclose(ds["dis_delc"].values, FILL_FLOAT64)
+    assert ds["dis_delr"].dims == ("x",)
+    assert ds["dis_delc"].dims == ("y",)
     for layer in range(3):
+        assert f"dis_idomain_l{layer + 1}" in ds
         assert f"npf_k_l{layer + 1}" in ds
         assert f"npf_k22_l{layer + 1}" in ds
         assert f"npf_icelltype_l{layer + 1}" in ds
         assert f"welg_0_q_l{layer + 1}" in ds
         assert f"welg_0_aux_l{layer + 1}" in ds
+        assert np.allclose(ds[f"dis_idomain_l{layer + 1}"].values, FILL_INT64)
         assert np.allclose(ds[f"npf_k_l{layer + 1}"].values, FILL_FLOAT64)
         assert np.allclose(ds[f"npf_k22_l{layer + 1}"].values, FILL_FLOAT64)
         assert np.allclose(ds[f"npf_icelltype_l{layer + 1}"].values, FILL_INT64)
         assert np.allclose(ds[f"welg_0_q_l{layer + 1}"].values, FILL_DNODATA)
         assert np.allclose(ds[f"welg_0_aux_l{layer + 1}"].values, FILL_DNODATA)
+        assert ds[f"dis_idomain_l{layer + 1}"].dims == ("nmesh_face",)
         assert ds[f"npf_k_l{layer + 1}"].dims == ("nmesh_face",)
         assert ds[f"npf_k22_l{layer + 1}"].dims == ("nmesh_face",)
         assert ds[f"npf_icelltype_l{layer + 1}"].dims == ("nmesh_face",)
         assert ds[f"welg_0_q_l{layer + 1}"].dims == ("time", "nmesh_face")
         assert ds[f"welg_0_aux_l{layer + 1}"].dims == ("time", "nmesh_face")
     assert ds.sizes["time"] == 2
-    assert ds.sizes["nmesh_face"] == 2
-    assert len(ds) == 15
+    assert ds.sizes["nmesh_face"] == 4
+    assert ds.sizes["x"] == 2
+    assert ds.sizes["y"] == 2
+    assert len(ds) == 20
 
     # for p in packages:
     # TODO: define required context for isolated package
@@ -257,7 +284,12 @@ def test_om_package_mesh():
         },
     ]
 
-    context = {"mesh": "layered", "modelname": "gwfmodel", "dims": [2, 3, 2]}
+    context = {
+        "mesh": "layered",
+        "modelname": "gwfmodel",
+        "grid": "structured",
+        "dims": [2, 3, 2, 2],
+    }
     for p in packages:
         pinst = NetCDFPackage.from_meta(p, context=context)
         ds = pinst.to_xarray()
@@ -281,7 +313,7 @@ def test_om_package_mesh():
                 assert ds[f"npf_k_l{layer + 1}"].dims == ("nmesh_face",)
                 assert ds[f"npf_k22_l{layer + 1}"].dims == ("nmesh_face",)
                 assert ds[f"npf_icelltype_l{layer + 1}"].dims == ("nmesh_face",)
-            assert ds.sizes["nmesh_face"] == 2
+            assert ds.sizes["nmesh_face"] == 4
             assert len(ds) == 9
 
         elif p["package_type"] == "gwf-welg":
@@ -295,7 +327,7 @@ def test_om_package_mesh():
                 assert ds[f"welg_0_q_l{layer + 1}"].dims == ("time", "nmesh_face")
                 assert ds[f"welg_0_aux_l{layer + 1}"].dims == ("time", "nmesh_face")
             assert ds.sizes["time"] == 2
-            assert ds.sizes["nmesh_face"] == 2
+            assert ds.sizes["nmesh_face"] == 4
             assert len(ds) == 6
 
 
@@ -318,9 +350,10 @@ def test_om_param_mesh():
     context = {
         "mesh": "layered",
         "modelname": "gwfmodel",
+        "grid": "structured",
         "package_name": "welg0",
         "package_type": "gwf-welg",
-        "dims": [1, 1, 1],
+        "dims": [1, 1, 1, 1],
     }
 
     for p in params:
