@@ -3,11 +3,19 @@ from pathlib import Path
 
 import numpy as np
 import xarray as xr
-from pydantic import BaseModel, Field, ValidationError, ValidationInfo, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+)
 
 from modflow_devtools.dfn import fetch, load
 
-SPEC_PATH = None
+# SPEC_PATH = None
+SPEC_PATH = Path("/tmp/modflow6/6.7.0.dev3/")
 FILL_DNODATA = np.float64(3e30)  # MF6 DNODATA constant
 FILL_INT32 = np.int32(-2147483647)  # netcdf-fortran NF90_FILL_INT
 FILL_INT64 = np.int64(-2147483647)  # netcdf-fortran NF90_FILL_INT
@@ -240,7 +248,7 @@ class NetCDFPackage(BaseModel, NetCDFInput):
             shape = [
                 dim.strip() for dim in dfn.fields[p["name"].lower()].shape[1:-1].split()
             ]
-            gridded = "nodes" in shape or len(shape) >= 3
+            gridded = "nodes" in shape or ("nper," not in shape and len(shape) >= 3)
             if not gridded or mesh is None:
                 if "attrs" in p and "layer" in p["attrs"]:
                     assert p["attrs"]["layer"] is None
@@ -263,6 +271,10 @@ class NetCDFParam(BaseModel, NetCDFInput):
     attrs: "NetCDFParamAttrs"
     encodings: "NetCDFParamEncodings"
     dtype: str = Field()
+    data: np.ndarray | None = None
+
+    # Allow Pydantic to handle non-native types (data)
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def model_post_init(self, __context) -> None:
         self._context = __context
@@ -275,6 +287,20 @@ class NetCDFParam(BaseModel, NetCDFInput):
                     k.lower(): v.lower() if isinstance(v, str) else v
                     for k, v in context.items()
                 }
+                if "dims" in context:
+                    context["dimmap"] = {
+                        "time": context["dims"][0],
+                        "z": context["dims"][1],
+                    }
+
+                    if context["grid"] == "structured":
+                        context["dimmap"]["y"] = context["dims"][2]
+                        context["dimmap"]["nmesh_face"] = (
+                            context["dims"][2] * context["dims"][3]
+                        )
+                        context["dimmap"]["x"] = context["dims"][3]
+                    elif context["grid"] == "vertex":
+                        context["dimmap"]["nmesh_face"] = context["dims"][2]
             _meta = NetCDFParam._backfill_meta(meta, context)
             inst = cls.model_validate(_meta, context=context)
             inst._context |= context if context is not None else inst._context
@@ -283,20 +309,6 @@ class NetCDFParam(BaseModel, NetCDFInput):
             raise
 
     def to_xarray(self) -> xr.Dataset:
-        grid = self._context.get("grid")  # type: ignore
-
-        dimmap = {
-            "time": self._context["dims"][0],
-            "z": self._context["dims"][1],
-        }
-
-        if grid == "structured":
-            dimmap["y"] = self._context["dims"][2]
-            dimmap["nmesh_face"] = self._context["dims"][2] * self._context["dims"][3]
-            dimmap["x"] = self._context["dims"][3]
-        elif grid == "vertex":
-            dimmap["nmesh_face"] = self._context["dims"][2]
-
         dtype: type[np.generic]
         meta = self.model_dump(by_alias=True)
         ds = xr.Dataset()
@@ -320,12 +332,15 @@ class NetCDFParam(BaseModel, NetCDFInput):
             dtype = np.float64
         elif meta["dtype"] == "int64":
             dtype = np.int64
-        dims = [dimmap[dim] for dim in meta["shape"]]
-        data = np.full(
-            dims,
-            meta["encodings"]["_FillValue"],
-            dtype=dtype,
-        )
+        if "data" in meta and meta["data"] is not None:
+            data = meta["data"]
+        else:
+            dims = [self._context["dimmap"][dim] for dim in meta["shape"]]
+            data = np.full(
+                dims,
+                meta["encodings"]["_FillValue"],
+                dtype=dtype,
+            )
         var_d = {varname: (meta["shape"], data)}
         ds = ds.assign(var_d)
         for a in meta["attrs"]:
@@ -392,7 +407,8 @@ class NetCDFParam(BaseModel, NetCDFInput):
         param = info.data.get("name")
         shape = info.data.get("shape")
         assert shape
-        gridded = "nodes" in shape or len(shape) >= 3  # type: ignore
+        # gridded = "nodes" in shape or len(shape) >= 3  # type: ignore
+        gridded = "nodes" in shape or ("nper," not in shape and len(shape) >= 3)
         mesh = info.context.get("mesh")  # type: ignore
         if gridded and mesh is not None and ("layer" not in v or v["layer"] is None):
             raise AssertionError(f"->expected layer attribute for mesh param '{param}'")
@@ -414,6 +430,14 @@ class NetCDFParam(BaseModel, NetCDFInput):
         valid = ["float64", "int64", "int32"]
         if v not in valid:
             raise AssertionError(f"->invalid param dtype={v}. Valid types={valid}.")
+        return v
+
+    @field_validator("data", mode="before")
+    @classmethod
+    def validate_data(cls, v: np.ndarray) -> np.ndarray:
+        """
+        validate parameter data
+        """
         return v
 
     @staticmethod
@@ -474,15 +498,15 @@ class NetCDFParam(BaseModel, NetCDFInput):
                 _meta["dtype"] = "int64"
                 if "_FillValue" not in _meta["encodings"]:
                     _meta["encodings"]["_FillValue"] = (
-                        FILL_DNODATA  # TODO: FILL_INODATA
-                        if dfn.fields[param].block == "period"
-                        else FILL_INT64
+                        # FILL_DNODATA  # TODO: FILL_INODATA
+                        FILL_INT64
                     )
         if "modflow_input" not in _meta["attrs"]:
+            ptype = context["package_type"].split("-")[1].strip()
             _meta["attrs"]["modflow_input"] = (
                 f"{mname}/{context['package_name']}/{param}"
                 if dfn.multi
-                else f"{mname}/{context['package_type']}/{param}"
+                else f"{mname}/{ptype}/{param}"
             )
         if "shape" not in _meta:
             _meta["shape"] = (
@@ -490,6 +514,36 @@ class NetCDFParam(BaseModel, NetCDFInput):
                 if mesh is not None
                 else _structured_shape(dfn.fields[param].shape)
             )
+
+        if "data" in _meta:
+            dims = [context["dimmap"][dim] for dim in _meta["shape"]]
+            nval = np.prod(dims)
+
+            if "layer" in _meta["attrs"]:
+                data = _meta["data"]
+                layer = _meta["attrs"]["layer"] - 1
+                if data.size == nval * context["dimmap"]["z"]:
+                    # provided data is for full grid
+                    s = dims
+                    if dfn.fields[param].shape == "(nper, nodes)":
+                        s.insert(1, context["dimmap"]["z"])
+                        _meta["data"] = data.reshape(s)[:, layer, :]
+                    elif "nlay" in dfn.fields[param].shape:
+                        # s = ds[varname].values.shape
+                        s.insert(0, context["dimmap"]["z"])
+                        _meta["data"] = data.reshape(s)[layer, :].ravel()
+                    elif "nodes" in dfn.fields[param].shape:
+                        idx = 1 if _meta["shape"][0] == "time" else 0
+                        s.insert(idx, context["dimmap"]["z"])
+                        _meta["data"] = data.reshape(s)[layer, :].ravel()
+                else:
+                    # assume provided data is correctly formatted
+                    pass
+
+            else:
+                data = _meta["data"]
+                assert data.size == nval
+                _meta["data"] = data.reshape(dims)
 
         return _meta
 
